@@ -4,7 +4,7 @@ from dotenv import load_dotenv, find_dotenv
 from langchain.vectorstores import Pinecone
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.chains import RetrievalQA
+from langchain.chains import RetrievalQA, ConversationalRetrievalChain
 from langchain.chat_models import ChatOpenAI
 from langchain.document_loaders import PyPDFLoader, WikipediaLoader
 
@@ -73,11 +73,20 @@ def insert_or_fetch_embeddings(index_name: str, chunks: list):
     return vector_store
 
 
-def ask_and_get_answer(vector_store, query: str):
+def ask_and_get_answer(vector_store, question: str):
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=1)
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
     chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever)
-    return chain.run(query)
+    return chain.run(question)
+
+
+def ask_with_memory(vector_store, question, chat_history=[]):
+    llm = ChatOpenAI(temperature=1)
+    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+    chain = ConversationalRetrievalChain.from_llm(llm, retriever)
+    result = chain({"question": question, "chat_history": chat_history})
+    chat_history.append((question, result["answer"]))
+    return result, chat_history
 
 
 if __name__ == "__main__":
@@ -96,6 +105,7 @@ if __name__ == "__main__":
 
     i = 1  # to track the questions
     print("Write Quit or Exit to quit.")
+    chat_history = []
     while True:
         q = input(f"Question #{i}: ")
         i += 1
@@ -103,6 +113,6 @@ if __name__ == "__main__":
             print("Quiting ... bye bye!")
             time.sleep(2)
             break
-        answer = ask_and_get_answer(vector_store, q)
-        print(f"\nAnswer: {answer}")
+        result, chat_history = ask_with_memory(vector_store, q, chat_history)
+        print(f"\nAnswer: {result['answer']}")
         print(f'\n {"_"*50} \n')
